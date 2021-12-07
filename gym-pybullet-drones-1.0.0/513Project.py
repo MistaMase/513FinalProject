@@ -50,7 +50,6 @@ if __name__ == "__main__":
                      )
 
     #### Initialize the trajectories ###########################
-    PERIOD = 5
     LIFTOFF_HEIGHT = 1 # m
     LIFTOFF_TIME = 2 # s
     NUM_WP = ARGS.control_freq_hz*LIFTOFF_TIME
