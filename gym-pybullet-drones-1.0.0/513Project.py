@@ -18,7 +18,8 @@ import numpy as np
 from gym_pybullet_drones.utils.utils import sync, str2bool
 from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics
 from gym_pybullet_drones.envs.CtrlAviary import CtrlAviary
-from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
+#from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
+from CPSController import CPSController
 from gym_pybullet_drones.utils.Logger import Logger
 
 if __name__ == "__main__":
@@ -35,7 +36,7 @@ if __name__ == "__main__":
     ARGS = parser.parse_args()
 
     #### Initialize the simulation #############################
-    INIT_XYZS = np.array([[0., 0., 0.]])
+    INIT_XYZS = np.array([[0., 0., 1.]])
     AGGR_PHY_STEPS = int(ARGS.simulation_freq_hz/ARGS.control_freq_hz) if ARGS.aggregate else 1
     env = CtrlAviary(drone_model=ARGS.drone,
                      num_drones=1,
@@ -51,13 +52,11 @@ if __name__ == "__main__":
 
     #### Initialize the trajectories ###########################
     LIFTOFF_HEIGHT = 1 # m
-    LIFTOFF_TIME = 2 # s
+    LIFTOFF_TIME = 10 # s
     NUM_WP = ARGS.control_freq_hz*LIFTOFF_TIME
     TARGET_POS = np.zeros((NUM_WP, 3))
-    TARGET_POS[:, 2] = np.arange(NUM_WP) * (LIFTOFF_HEIGHT/NUM_WP)
-    # for i in range(NUM_WP):
-    #     TARGET_POS[i, :] = [0.5*np.cos(2*np.pi*(i/NUM_WP)), 0, 0]
-    print(f'Target Pos: {TARGET_POS}')
+    TARGET_POS[:, 2] = np.arange(NUM_WP) * (LIFTOFF_HEIGHT/(NUM_WP-1)) + INIT_XYZS[0][2]
+    #print(f'Target Pos: {TARGET_POS}')
 
     #### Initialize the logger #################################
     logger = Logger(logging_freq_hz=int(ARGS.simulation_freq_hz/AGGR_PHY_STEPS),
@@ -66,20 +65,34 @@ if __name__ == "__main__":
                     )
 
     #### Initialize the controllers ############################
-    #ctrl = [DSLPIDControl(drone_model=ARGS.drone) for i in range(1)]
+    ctrl = CPSController(drone_model=ARGS.drone)
 
     #### Run the simulation ####################################
     CTRL_EVERY_N_STEPS = int(np.floor(env.SIM_FREQ/ARGS.control_freq_hz))
-    action = {str(i): np.array([0, 0, 0, 0]) for i in range(1)}
+    action = {str('0'): np.array([0, 0, 0, 0])}
     START = time.time()
     for i in range(0, int(ARGS.duration_sec*env.SIM_FREQ), AGGR_PHY_STEPS):
 
         #### Step the simulation ###################################
         obs, reward, done, info = env.step(action)
+        drone_props = obs[str(0)]["state"]
+        # Observation Vector: X, Y, Z, Q1, Q2, Q3, Q4, Roll, Pitch, Yaw, Velocity X, Velocity Y, Velocity Z,
+        # Angular Velocity X, Angular Velocity Y, Angular Velocity Z, Power 0, Power 1, Power 2, Power 3
+        #print(f'Obs: {drone_props}')
 
         #### Compute control at the desired frequency ##############
-        # if i%CTRL_EVERY_N_STEPS == 0:
+        if i%CTRL_EVERY_N_STEPS == 0:
 
+            rpms, pos_error, yaw_error = ctrl.computeControl(control_timestep=CTRL_EVERY_N_STEPS*env.TIMESTEP,
+                                                                cur_pos=drone_props[0:3],
+                                                                cur_quat=drone_props[3:7],
+                                                                cur_vel=drone_props[10:13],
+                                                                cur_ang_vel=drone_props[13:16],
+                                                                target_pos=TARGET_POS[int(i/CTRL_EVERY_N_STEPS)]
+                                                             )
+
+            # Update the action values
+            action['0'] = rpms
             # #### Compute control for the current way point #############
             # #for j in range(2):
             # action[str(0)], _, _ = ctrl[0].computeControlFromState(control_timestep=CTRL_EVERY_N_STEPS*env.TIMESTEP,
