@@ -19,7 +19,7 @@ from gym_pybullet_drones.utils.utils import sync, str2bool
 from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics
 from gym_pybullet_drones.envs.CtrlAviary import CtrlAviary
 #from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
-from CPSController import CPSController
+from CPSControllerDynamics import CPSControllerDynamics
 from CPSTrajectoryGeneration import CPSTrajectory
 from gym_pybullet_drones.utils.Logger import Logger
 
@@ -33,7 +33,7 @@ if __name__ == "__main__":
     parser.add_argument('--simulation_freq_hz', default=240,        type=int,           help='Simulation frequency in Hz (default: 240)', metavar='')
     parser.add_argument('--control_freq_hz',    default=48,         type=int,           help='Control frequency in Hz (default: 48)', metavar='')
     parser.add_argument('--aggregate',          default=True,       type=str2bool,      help='Whether to aggregate physics steps (default: False)', metavar='')
-    parser.add_argument('--duration_sec',       default=12,         type=int,           help='Duration of the simulation in seconds (default: 10)', metavar='')
+    parser.add_argument('--duration_sec',       default=20,         type=int,           help='Duration of the simulation in seconds (default: 10)', metavar='')
     ARGS = parser.parse_args()
 
     #### Initialize the simulation #############################
@@ -52,14 +52,25 @@ if __name__ == "__main__":
                      )
 
     #### Initialize the trajectories ###########################
-    waypoints = np.array([[0., 0., 1.5],
-                          [0.2, 0., 1.5],
-                          [1., 1., 2.]
-                          ])
-    time_per_waypoint = np.array([4., 4., 4.])
-    traj_gen = CPSTrajectory(INIT_XYZS[0], waypoints, ARGS.control_freq_hz, time_per_waypoint)
-    traj = traj_gen.linear_interpolation()
-    input('Verify Trajectory - Press Any Key To Continue')
+
+    # Testing Simply Trajectory
+    simple_traj = True
+    if simple_traj:
+        waypoints = np.array([[0., 0., 2, 0., 0., 0.],
+                              [-1., 0., 2, 0., 0., 2*np.pi],
+                              [-1., -1., 0.5, 0., 0., 2*np.pi]])
+        time_per_waypoint = np.array([2., 2., 2.])
+        traj_gen = CPSTrajectory(INIT_XYZS[0], waypoints, ARGS.control_freq_hz, time_per_waypoint)
+        traj_pos, traj_rot = traj_gen.linear_interpolation()
+
+    else:
+        waypoints = np.array([[0., 0., 1.5, 0., 0., 0.],
+                              [1., 0., 1.5, 0., 0.75*np.pi, 2*np.pi],
+                              [-1., 0., 1.5, 0., -0.75*np.pi, 0.],
+                              [1., 0., 1.5, 0., 0.75*np.pi, 2*np.pi]])
+        time_per_waypoint = np.array([2., 2., 4., 4.])
+        traj_gen = CPSTrajectory(INIT_XYZS[0], waypoints, ARGS.control_freq_hz, time_per_waypoint)
+        traj_pos, traj_rot = traj_gen.linear_interpolation()
 
     #### Initialize the logger #################################
     logger = Logger(logging_freq_hz=int(ARGS.simulation_freq_hz/AGGR_PHY_STEPS),
@@ -68,7 +79,7 @@ if __name__ == "__main__":
                     )
 
     #### Initialize the controllers ############################
-    ctrl = CPSController(drone_model=ARGS.drone)
+    ctrl_main = CPSControllerDynamics(drone_model=ARGS.drone)
 
     #### Run the simulation ####################################
     CTRL_EVERY_N_STEPS = int(np.floor(env.SIM_FREQ/ARGS.control_freq_hz))
@@ -78,42 +89,39 @@ if __name__ == "__main__":
 
         #### Step the simulation ###################################
         obs, reward, done, info = env.step(action)
-        drone_props = obs[str(0)]["state"]
+        drone_state = obs[str(0)]["state"]
         # Observation Vector: X, Y, Z, Q1, Q2, Q3, Q4, Roll, Pitch, Yaw, Velocity X, Velocity Y, Velocity Z,
         # Angular Velocity X, Angular Velocity Y, Angular Velocity Z, Power 0, Power 1, Power 2, Power 3
-        #print(f'Obs: {drone_props}')
 
         #### Compute control at the desired frequency ##############
         if i%CTRL_EVERY_N_STEPS == 0:
 
-            rpms, pos_error, yaw_error = ctrl.computeControl(control_timestep=CTRL_EVERY_N_STEPS*env.TIMESTEP,
-                                                                cur_pos=drone_props[0:3],
-                                                                cur_quat=drone_props[3:7],
-                                                                cur_vel=drone_props[10:13],
-                                                                cur_ang_vel=drone_props[13:16],
-                                                                target_pos=traj[int(i/CTRL_EVERY_N_STEPS)]
-                                                             )
+            # Follows our trajectory while there's data
+            try:
+                rpms, pos_error, yaw_error = ctrl_main.computeControlFromState(control_timestep=CTRL_EVERY_N_STEPS*env.TIMESTEP,
+                                                                    state=drone_state,
+                                                                    target_pos=traj_pos[int(i/CTRL_EVERY_N_STEPS)],
+                                                                    target_rpy=traj_rot[int(i/CTRL_EVERY_N_STEPS)])
+
+            # Hovers when we've finished the trajectory
+            except IndexError:
+                rpms, pos_error, yaw_error = ctrl_main.computeControlFromState(
+                    control_timestep=CTRL_EVERY_N_STEPS * env.TIMESTEP,
+                    state=drone_state,
+                    target_pos=waypoints[-1, 0:3],
+                    target_rpy=waypoints[-1, 3:6])
 
             # Update the action values
             action['0'] = rpms
-            # #### Compute control for the current way point #############
-            # #for j in range(2):
-            # action[str(0)], _, _ = ctrl[0].computeControlFromState(control_timestep=CTRL_EVERY_N_STEPS*env.TIMESTEP,
-            #                                                            state=obs[str(0)]["state"],
-            #                                                            target_pos=np.hstack([INIT_XYZS[0, 2], TARGET_POS[wp_counters[0], :]]),
-            #                                                            )
-            # print(f'HStack: {np.hstack([TARGET_POS[wp_counters[0], :], INIT_XYZS[0, 2]])}')
-            #
-            # #### Go to the next way point and loop #####################
-            # #for j in range(2):
 
         #### Log the simulation ####################################
-        #for j in range(2):
-        # logger.log(drone=0,
-        #            timestamp=i/env.SIM_FREQ,
-        #            state=obs[str(0)]["state"],
-        #            control=np.hstack([TARGET_POS[wp_counters[0], :], INIT_XYZS[0 ,2], np.zeros(9)])
-        #            )
+        logger.log(drone=0,
+                   timestamp=i/env.SIM_FREQ,
+                   state=drone_state,
+                   control=np.zeros(12) # TODO Not Sure What Data Should Go In Here
+                   #control=np.append(traj_pos, traj_rot, INIT_XYZS[0], np.zeros(9))
+                   #control=np.hstack([TARGET_POS[wp_counters[0], :], INIT_XYZS[0 ,2], np.zeros(9)])
+                   )
 
         #### Printout ##############################################
         if i%env.SIM_FREQ == 0:
@@ -128,7 +136,7 @@ if __name__ == "__main__":
 
     #### Save the simulation results ###########################
     logger.save()
-    logger.save_as_csv("dw") # Optional CSV save
+    logger.save_as_csv("513FP") # Optional CSV save
 
     #### Plot the simulation results ###########################
     logger.plot()

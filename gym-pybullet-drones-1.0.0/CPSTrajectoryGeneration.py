@@ -5,11 +5,11 @@ class CPSTrajectory:
     # Start Location:   [X, Y, Z, Q0, Q1, Q2, Q3]
     # Waypoints:        [X, Y, Z, Q0, Q1, Q2, Q3]
     def __init__(self, start_location, waypoints, update_freq, time_per_waypoint):
-        self.start_location = start_location
+        self.start_location = np.append(start_location, [0., 0., 0.])
         self.waypoints = waypoints
         self.update_freq = update_freq
         self.time_per_waypoint = time_per_waypoint
-        self._trajectory = np.zeros((int(np.sum(time_per_waypoint)*update_freq), 3))
+        self._trajectory = np.zeros((int(np.sum(time_per_waypoint)*update_freq), 6))
 
     def linear_interpolation(self):
         # Connect Start to First Waypoint
@@ -33,10 +33,8 @@ class CPSTrajectory:
                 self._trajectory[start_num+j] = self.waypoints[i] + step[j]*distance
             start_num += num_pts
 
-        # Add the last point
-
         print(f'Trajectory: {self._trajectory}')
-        return self._trajectory
+        return self._trajectory[:, 0:3], self._trajectory[:, 3:6]
 
     def linear_interpolation_smoothing(self):
         pass

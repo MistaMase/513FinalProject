@@ -137,9 +137,11 @@ class Logger(object):
         # Check if on Windows to fix the home bug
         if os.name == 'nt':
             from pathlib import Path
-            csv_dir = str(Path.home())+"/Desktop/save-flight-"+comment+"-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")
+            #csv_dir = str(Path.home())+"/Desktop/save-flight-"+comment+"-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")
+            csv_dir = str(Path().resolve())+"/data/save-flight-"+comment+"-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")
         else:
-            csv_dir = os.environ.get('HOME')+"/Desktop/save-flight-"+comment+"-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")
+            #csv_dir = os.environ.get('HOME')+"/Desktop/save-flight-"+comment+"-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")
+            csv_dir = os.path.abspath(os.getcwd())+"/data/save-flight-"+comment+"-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")
         if not os.path.exists(csv_dir):
             os.makedirs(csv_dir+'/')
         t = np.arange(0, self.timestamps.shape[1]/self.LOGGING_FREQ_HZ, 1/self.LOGGING_FREQ_HZ)
