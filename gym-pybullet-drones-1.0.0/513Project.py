@@ -20,6 +20,7 @@ from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics
 from gym_pybullet_drones.envs.CtrlAviary import CtrlAviary
 #from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 from CPSController import CPSController
+from CPSTrajectoryGeneration import CPSTrajectory
 from gym_pybullet_drones.utils.Logger import Logger
 
 if __name__ == "__main__":
@@ -51,12 +52,14 @@ if __name__ == "__main__":
                      )
 
     #### Initialize the trajectories ###########################
-    LIFTOFF_HEIGHT = 1 # m
-    LIFTOFF_TIME = 10 # s
-    NUM_WP = ARGS.control_freq_hz*LIFTOFF_TIME
-    TARGET_POS = np.zeros((NUM_WP, 3))
-    TARGET_POS[:, 2] = np.arange(NUM_WP) * (LIFTOFF_HEIGHT/(NUM_WP-1)) + INIT_XYZS[0][2]
-    #print(f'Target Pos: {TARGET_POS}')
+    waypoints = np.array([[0., 0., 1.5],
+                          [0.2, 0., 1.5],
+                          [1., 1., 2.]
+                          ])
+    time_per_waypoint = np.array([4., 4., 4.])
+    traj_gen = CPSTrajectory(INIT_XYZS[0], waypoints, ARGS.control_freq_hz, time_per_waypoint)
+    traj = traj_gen.linear_interpolation()
+    input('Verify Trajectory - Press Any Key To Continue')
 
     #### Initialize the logger #################################
     logger = Logger(logging_freq_hz=int(ARGS.simulation_freq_hz/AGGR_PHY_STEPS),
@@ -88,7 +91,7 @@ if __name__ == "__main__":
                                                                 cur_quat=drone_props[3:7],
                                                                 cur_vel=drone_props[10:13],
                                                                 cur_ang_vel=drone_props[13:16],
-                                                                target_pos=TARGET_POS[int(i/CTRL_EVERY_N_STEPS)]
+                                                                target_pos=traj[int(i/CTRL_EVERY_N_STEPS)]
                                                              )
 
             # Update the action values
