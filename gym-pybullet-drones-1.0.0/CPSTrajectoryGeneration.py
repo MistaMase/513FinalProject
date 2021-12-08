@@ -39,6 +39,7 @@ class CPSTrajectory:
         return self._trajectory
 
     def linear_interpolation_smoothing(self):
+        pass
 
     def cost_optimation(self):
         pass
