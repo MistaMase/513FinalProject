@@ -14,6 +14,7 @@ The drones move along 2D trajectories in the X-Z plane, between x == +.5 and -.5
 import time
 import argparse
 import numpy as np
+import quaternion
 
 from gym_pybullet_drones.utils.utils import sync, str2bool
 from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics
@@ -54,14 +55,19 @@ if __name__ == "__main__":
     #### Initialize the trajectories ###########################
 
     # Testing Simply Trajectory
-    simple_traj = True
+    simple_traj = False
     if simple_traj:
-        waypoints = np.array([[0., 0., 2, 0., 0., 0.],
-                              [-1., 0., 2, 0., 0., 2*np.pi],
-                              [-1., -1., 0.5, 0., 0., 2*np.pi]])
+        waypoints = np.array([[0., 0., 2],
+                              [-1., 0., 2],
+                              [-1., -1., 1.0]])
+        waypoints_rotation = np.array([quaternion.from_euler_angles(0, 0, np.pi),
+                                       quaternion.from_euler_angles(0, 0, 4*np.pi),
+                                       quaternion.from_euler_angles(0, 0, 5*np.pi)])
         time_per_waypoint = np.array([2., 2., 2.])
-        traj_gen = CPSTrajectory(INIT_XYZS[0], waypoints, ARGS.control_freq_hz, time_per_waypoint)
-        traj_pos, traj_rot = traj_gen.linear_interpolation()
+        traj_gen = CPSTrajectory(INIT_XYZS[0], waypoints, ARGS.control_freq_hz, time_per_waypoint, waypoints_rotation)
+        traj_pos, traj_rot = traj_gen.linear_interpolation_quaternion()
+        # Change back to Euler Angles only for the existing controller
+        traj_rot = quaternion.as_euler_angles(traj_rot)
 
     else:
         waypoints = np.array([[0., 0., 1.5, 0., 0., 0.],
@@ -69,7 +75,7 @@ if __name__ == "__main__":
                               [-1., 0., 1.5, 0., -0.75*np.pi, 0.],
                               [1., 0., 1.5, 0., 0.75*np.pi, 2*np.pi]])
         time_per_waypoint = np.array([2., 2., 4., 4.])
-        traj_gen = CPSTrajectory(INIT_XYZS[0], waypoints, ARGS.control_freq_hz, time_per_waypoint)
+        traj_gen = CPSTrajectory(INIT_XYZS[0], waypoints, ARGS.control_freq_hz, time_per_waypoint, is_quaternion=False)
         traj_pos, traj_rot = traj_gen.linear_interpolation()
 
     #### Initialize the logger #################################
@@ -105,11 +111,18 @@ if __name__ == "__main__":
 
             # Hovers when we've finished the trajectory
             except IndexError:
-                rpms, pos_error, yaw_error = ctrl_main.computeControlFromState(
-                    control_timestep=CTRL_EVERY_N_STEPS * env.TIMESTEP,
-                    state=drone_state,
-                    target_pos=waypoints[-1, 0:3],
-                    target_rpy=waypoints[-1, 3:6])
+                if not simple_traj:
+                    rpms, pos_error, yaw_error = ctrl_main.computeControlFromState(
+                        control_timestep=CTRL_EVERY_N_STEPS * env.TIMESTEP,
+                        state=drone_state,
+                        target_pos=waypoints[-1, 0:3],
+                        target_rpy=waypoints[-1, 3:6])
+                else:
+                    rpms, pos_error, yaw_error = ctrl_main.computeControlFromState(
+                        control_timestep=CTRL_EVERY_N_STEPS * env.TIMESTEP,
+                        state=drone_state,
+                        target_pos=waypoints[-1],
+                        target_rpy=quaternion.as_euler_angles(waypoints_rotation[-1]))
 
             # Update the action values
             action['0'] = rpms
