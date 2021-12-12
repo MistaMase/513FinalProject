@@ -34,6 +34,9 @@ class CPSControllerDynamics(BaseControl):
         if self.DRONE_MODEL != DroneModel.CF2X and self.DRONE_MODEL != DroneModel.CF2P:
             print("[ERROR] in DSLPIDControl.__init__(), DSLPIDControl requires DroneModel.CF2X or DroneModel.CF2P")
             exit()
+        self.mass = self._getURDFParameter('mass')
+        self.arm = self._getURDFParameter('arm')
+        self.prop_radius = self._getURDFParameter('prop_radius')
         self.P_COEFF_FOR = np.array([.4, .4, 1.25])
         self.I_COEFF_FOR = np.array([.05, .05, .05])
         self.D_COEFF_FOR = np.array([.2, .2, .5])
@@ -80,42 +83,7 @@ class CPSControllerDynamics(BaseControl):
                        target_vel=np.zeros(3),
                        target_rpy_rates=np.zeros(3)
                        ):
-        """Computes the PID control action (as RPMs) for a single drone.
 
-        This methods sequentially calls `_dslPIDPositionControl()` and `_dslPIDAttitudeControl()`.
-        Parameter `cur_ang_vel` is unused.
-
-        Parameters
-        ----------
-        control_timestep : float
-            The time step at which control is computed.
-        cur_pos : ndarray
-            (3,1)-shaped array of floats containing the current position.
-        cur_quat : ndarray
-            (4,1)-shaped array of floats containing the current orientation as a quaternion.
-        cur_vel : ndarray
-            (3,1)-shaped array of floats containing the current velocity.
-        cur_ang_vel : ndarray
-            (3,1)-shaped array of floats containing the current angular velocity.
-        target_pos : ndarray
-            (3,1)-shaped array of floats containing the desired position.
-        target_rpy : ndarray, optional
-            (3,1)-shaped array of floats containing the desired orientation as roll, pitch, yaw.
-        target_vel : ndarray, optional
-            (3,1)-shaped array of floats containing the desired velocity.
-        target_rpy_rates : ndarray, optional
-            (3,1)-shaped array of floats containing the desired roll, pitch, and yaw rates.
-
-        Returns
-        -------
-        ndarray
-            (4,1)-shaped array of integers containing the RPMs to apply to each of the 4 motors.
-        ndarray
-            (3,1)-shaped array of floats containing the current XYZ position error.
-        float
-            The current yaw error.
-
-        """
         self.control_counter += 1
         thrust, computed_target_rpy, pos_e = self._dslPIDPositionControl(control_timestep,
                                                                          cur_pos,
@@ -184,19 +152,46 @@ class CPSControllerDynamics(BaseControl):
         target_thrust = np.multiply(self.P_COEFF_FOR, pos_e) \
                         + np.multiply(self.I_COEFF_FOR, self.integral_pos_e) \
                         + np.multiply(self.D_COEFF_FOR, vel_e) + np.array([0, 0, self.GRAVITY])
-        scalar_thrust = max(0., np.dot(target_thrust, cur_rotation[:, 2]))
-        thrust = (math.sqrt(scalar_thrust / (4 * self.KF)) - self.PWM2RPM_CONST) / self.PWM2RPM_SCALE
-        target_z_ax = target_thrust / np.linalg.norm(target_thrust)
-        target_x_c = np.array([math.cos(target_rpy[2]), math.sin(target_rpy[2]), 0])
-        target_y_ax = np.cross(target_z_ax, target_x_c) / np.linalg.norm(np.cross(target_z_ax, target_x_c))
-        target_x_ax = np.cross(target_y_ax, target_z_ax)
-        target_rotation = (np.vstack([target_x_ax, target_y_ax, target_z_ax])).transpose()
-        #### Target rotation #######################################
-        target_euler = (Rotation.from_matrix(target_rotation)).as_euler('XYZ', degrees=False)
-        if np.any(np.abs(target_euler) > math.pi):
-            print("\n[ERROR] ctrl it", self.control_counter,
-                  "in Control._dslPIDPositionControl(), values outside range [-pi,pi]")
-        return thrust, target_euler, pos_e
+        scalar_thrust = max(0., np.dot(target_thrust, cur_rotation[:, 2]))  # Projecting thrust onto the drone's current rotation (as a dot product)
+        thrust = (math.sqrt(scalar_thrust / (4 * self.KF)) - self.PWM2RPM_CONST) / self.PWM2RPM_SCALE  # TODO What square root this?
+
+        #### Translation #########
+        # Rotation Matrix to Translate from World Frame to Body Frame
+        # V' = V @ Rotation
+        # Returns 3D Point in Body Frame
+
+        # Rotation Matrix to Translate from Body Frame to World Frame
+        # V = R^T @ V'
+
+        target_thrust = target_thrust / np.linalg.norm(target_thrust)
+        roll, pitch, yaw = target_thrust
+        R_x = np.array([[1, 0,                  0           ],
+                        [0, np.cos(roll),       np.sin(roll)],
+                        [0, -1.0*np.sin(roll),  np.cos(roll)]])
+
+        R_y = np.array([[np.cos(pitch),  0,      np.sin(pitch)],
+                        [0,             1,      0                   ],
+                        [-1.0*np.sin(pitch),  0,      np.cos(pitch)]])
+
+        R_z = np.array([[np.cos(yaw),      -1.0*np.sin(yaw),   0],
+                        [np.sin(yaw), np.cos(yaw),   0],
+                        [0,                 0,            1]])
+
+        new_rot = np.cross(R_x, np.cross(R_y, R_z))
+        target_euler_pos = (np.transpose(new_rot) @ np.expand_dims(target_thrust, axis=1)).flatten()
+
+        ##### Rotation - Our Problem #######
+        # Rotation Matrix to Translate from Body Frame to World Frame
+        phi, theta, psi = target_rpy
+        R_w = np.array([[1,   np.sin(phi)*np.tan(theta),  np.cos(phi)*np.tan(theta)],
+                          [0,   np.cos(phi),              -1.0*np.sin(phi)],
+                          [0,   np.sin(phi)/np.cos(theta),np.cos(phi)/np.cos(theta)]])
+
+        target_euler_rot = (R_w @ np.expand_dims(target_rpy, axis=1)).flatten()
+        #target_euler_rot = np.array([np.cos(target_rpy[2]), np.sin(target_rpy[2]), 0])
+        target_euler_new = target_euler_rot
+
+        return thrust, target_euler_new, pos_e
 
     ################################################################################
 

@@ -19,7 +19,7 @@ import quaternion
 from gym_pybullet_drones.utils.utils import sync, str2bool
 from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics
 from gym_pybullet_drones.envs.CtrlAviary import CtrlAviary
-#from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
+from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 from CPSControllerDynamics import CPSControllerDynamics
 from CPSTrajectoryGeneration import CPSTrajectory
 from gym_pybullet_drones.utils.Logger import Logger
@@ -60,9 +60,9 @@ if __name__ == "__main__":
         waypoints = np.array([[0., 0., 2],
                               [-1., 0., 2],
                               [-1., -1., 1.0]])
-        waypoints_rotation = np.array([quaternion.from_euler_angles(0, 0, np.pi),
-                                       quaternion.from_euler_angles(0, 0, 4*np.pi),
-                                       quaternion.from_euler_angles(0, 0, 5*np.pi)])
+        waypoints_rotation = np.array([quaternion.from_euler_angles(0, 0, 0),
+                                       quaternion.from_euler_angles(0, 0, 0),
+                                       quaternion.from_euler_angles(0, 0, 0)])
         time_per_waypoint = np.array([2., 2., 2.])
         traj_gen = CPSTrajectory(INIT_XYZS[0], waypoints, ARGS.control_freq_hz, time_per_waypoint, waypoints_rotation)
         traj_pos, traj_rot = traj_gen.linear_interpolation_quaternion()
@@ -71,9 +71,9 @@ if __name__ == "__main__":
 
     else:
         waypoints = np.array([[0., 0., 1.5, 0., 0., 0.],
-                              [1., 0., 1.5, 0., 0.75*np.pi, 2*np.pi],
+                              [1., 0., 1.5, 0., 0.75*np.pi, 1*np.pi],
                               [-1., 0., 1.5, 0., -0.75*np.pi, 0.],
-                              [1., 0., 1.5, 0., 0.75*np.pi, 2*np.pi]])
+                              [1., 0., 1.5, 0., 0.75*np.pi, 1*np.pi]])
         time_per_waypoint = np.array([2., 2., 4., 4.])
         traj_gen = CPSTrajectory(INIT_XYZS[0], waypoints, ARGS.control_freq_hz, time_per_waypoint, is_quaternion=False)
         traj_pos, traj_rot = traj_gen.linear_interpolation()
@@ -86,6 +86,7 @@ if __name__ == "__main__":
 
     #### Initialize the controllers ############################
     ctrl_main = CPSControllerDynamics(drone_model=ARGS.drone)
+    #ctrl_main = DSLPIDControl(drone_model=ARGS.drone)
 
     #### Run the simulation ####################################
     CTRL_EVERY_N_STEPS = int(np.floor(env.SIM_FREQ/ARGS.control_freq_hz))
