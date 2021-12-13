@@ -71,10 +71,12 @@ if __name__ == "__main__":
 
     else:
         waypoints = np.array([[0., 0., 1.5, 0., 0., 0.],
-                              [1., 0., 1.5, 0., 0.75*np.pi, 1*np.pi],
-                              [-1., 0., 1.5, 0., -0.75*np.pi, 0.],
-                              [1., 0., 1.5, 0., 0.75*np.pi, 1*np.pi]])
-        time_per_waypoint = np.array([2., 2., 4., 4.])
+                              [1., 0., 1.5, 0., 0, 0.],
+                              [1., 0., 1.75, np.pi/2., 0., 0.],
+                              [1., 0., 2.0, np.pi, 0., 0.],
+                              [1., 0., 1.75, np.pi/2., 0., 0.],
+                              [1., 0., 1.5, 0., 0, 0.]])
+        time_per_waypoint = np.array([2., 2., 0.5, 0.5, 0.5, 0.5])
         traj_gen = CPSTrajectory(INIT_XYZS[0], waypoints, ARGS.control_freq_hz, time_per_waypoint, is_quaternion=False)
         traj_pos, traj_rot = traj_gen.linear_interpolation()
 
@@ -85,8 +87,8 @@ if __name__ == "__main__":
                     )
 
     #### Initialize the controllers ############################
-    ctrl_main = CPSControllerDynamics(drone_model=ARGS.drone)
-    #ctrl_main = DSLPIDControl(drone_model=ARGS.drone)
+    #ctrl_main = CPSControllerDynamics(drone_model=ARGS.drone)
+    ctrl_main = DSLPIDControl(drone_model=ARGS.drone)
 
     #### Run the simulation ####################################
     CTRL_EVERY_N_STEPS = int(np.floor(env.SIM_FREQ/ARGS.control_freq_hz))

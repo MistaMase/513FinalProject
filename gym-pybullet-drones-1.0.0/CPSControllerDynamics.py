@@ -152,8 +152,8 @@ class CPSControllerDynamics(BaseControl):
         target_thrust = np.multiply(self.P_COEFF_FOR, pos_e) \
                         + np.multiply(self.I_COEFF_FOR, self.integral_pos_e) \
                         + np.multiply(self.D_COEFF_FOR, vel_e) + np.array([0, 0, self.GRAVITY])
-        scalar_thrust = max(0., np.dot(target_thrust, cur_rotation[:, 2]))  # Projecting thrust onto the drone's current rotation (as a dot product)
-        thrust = (math.sqrt(scalar_thrust / (4 * self.KF)) - self.PWM2RPM_CONST) / self.PWM2RPM_SCALE  # TODO What square root this?
+        scalar_thrust = max(0., np.dot(target_thrust, cur_rotation[:, 2]))                                              # Projecting thrust onto the drone's current rotation (as a dot product)
+        thrust = (math.sqrt(scalar_thrust / (4 * self.KF)) - self.PWM2RPM_CONST) / self.PWM2RPM_SCALE                   # TODO What square root this?
 
         #### Translation #########
         # Rotation Matrix to Translate from World Frame to Body Frame
@@ -164,34 +164,42 @@ class CPSControllerDynamics(BaseControl):
         # V = R^T @ V'
 
         target_thrust = target_thrust / np.linalg.norm(target_thrust)
-        roll, pitch, yaw = target_thrust
-        R_x = np.array([[1, 0,                  0           ],
-                        [0, np.cos(roll),       np.sin(roll)],
-                        [0, -1.0*np.sin(roll),  np.cos(roll)]])
+        u, v, w = target_thrust
+        w = w + np.pi/4.0
+        # R_x = np.array([[1, 0,                  0           ],
+        #                 [0, np.cos(roll),       -1.0*np.sin(roll)],
+        #                 [0, np.sin(roll),  np.cos(roll)]])
+        #
+        # R_y = np.array([[np.cos(pitch),  0,      np.sin(pitch)],
+        #                 [0,             1,      0                   ],
+        #                 [-1.0*np.sin(pitch),  0,      np.cos(pitch)]])
+        #
+        # R_z = np.array([[np.cos(yaw),      -1.0*np.sin(yaw),   0],
+        #                 [np.sin(yaw), np.cos(yaw),   0],
+        #                 [0,                 0,            1]])
+        #
+        # new_rot = R_x @ R_y @ R_z
 
-        R_y = np.array([[np.cos(pitch),  0,      np.sin(pitch)],
-                        [0,             1,      0                   ],
-                        [-1.0*np.sin(pitch),  0,      np.cos(pitch)]])
+        uvw_rot_matrix = np.array([[np.cos(v)*np.cos(w),    np.sin(u)*np.sin(v)*np.cos(w)-np.cos(u)*np.sin(w),      np.sin(u)*np.sin(w)+np.cos(u)*np.sin(v)*np.cos(w)],
+                                   [np.cos(v)*np.sin(w),    np.cos(u)*np.cos(w)+np.sin(u)*np.sin(v)*np.sin(w),      np.cos(u)*np.sin(v)*np.sin(w)-np.sin(u)*np.cos(w)],
+                                   [-1.0*np.sin(v),         np.sin(u)*np.cos(v),                                    np.cos(u)*np.cos(v)]])
 
-        R_z = np.array([[np.cos(yaw),      -1.0*np.sin(yaw),   0],
-                        [np.sin(yaw), np.cos(yaw),   0],
-                        [0,                 0,            1]])
-
-        new_rot = np.cross(R_x, np.cross(R_y, R_z))
-        target_euler_pos = (np.transpose(new_rot) @ np.expand_dims(target_thrust, axis=1)).flatten()
+        print(f'Our Rotation Matrix: {uvw_rot_matrix}')
+        print(f'Their Rotation Matrix: {cur_rotation}')
+        target_euler_pos = target_thrust @ uvw_rot_matrix
 
         ##### Rotation - Our Problem #######
         # Rotation Matrix to Translate from Body Frame to World Frame
-        phi, theta, psi = target_rpy
-        R_w = np.array([[1,   np.sin(phi)*np.tan(theta),  np.cos(phi)*np.tan(theta)],
-                          [0,   np.cos(phi),              -1.0*np.sin(phi)],
-                          [0,   np.sin(phi)/np.cos(theta),np.cos(phi)/np.cos(theta)]])
+        # phi, theta, psi = target_rpy
+        # R_w = np.array([[1,   np.sin(phi)*np.tan(theta),  np.cos(phi)*np.tan(theta)],
+        #                   [0,   np.cos(phi),              -1.0*np.sin(phi)],
+        #                   [0,   np.sin(phi)/np.cos(theta),np.cos(phi)/np.cos(theta)]])
+        #
+        # target_euler_rot = (R_w @ np.expand_dims(target_rpy, axis=1)).flatten()
+        # #target_euler_rot = np.array([np.cos(target_rpy[2]), np.sin(target_rpy[2]), 0])
+        # target_euler_new = target_euler_pos
 
-        target_euler_rot = (R_w @ np.expand_dims(target_rpy, axis=1)).flatten()
-        #target_euler_rot = np.array([np.cos(target_rpy[2]), np.sin(target_rpy[2]), 0])
-        target_euler_new = target_euler_rot
-
-        return thrust, target_euler_new, pos_e
+        return thrust, target_euler_pos, pos_e
 
     ################################################################################
 
